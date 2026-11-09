@@ -1,15 +1,18 @@
-# QA Automation Framework — UI + API
+# QA Automation Framework — UI + API + Security
 
 [![Tests](https://github.com/santoun3/qa-automation-framework/actions/workflows/tests.yml/badge.svg)](https://github.com/santoun3/qa-automation-framework/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![Selenium](https://img.shields.io/badge/selenium-4-43B02A)
 ![Playwright](https://img.shields.io/badge/playwright-1-2EAD33)
 ![pytest](https://img.shields.io/badge/pytest-8-0A9EDC)
+![OWASP ZAP](https://img.shields.io/badge/OWASP%20ZAP-baseline-00549E)
 
 A test automation framework built the way I build them for production teams: page objects,
 independent tests, data-driven cases, contract checks on the API, and a CI pipeline that runs
 fast smoke tests on every push and the full regression suite nightly. The UI layer is covered
 twice, in **Selenium** and in **Playwright**, so the two approaches can be compared side by side.
+A **security layer** checks authentication, authorization and injection handling, and an
+**OWASP ZAP** scan runs in the pipeline.
 
 It tests two public practice applications:
 
@@ -32,10 +35,14 @@ It tests two public practice applications:
 | End-to-end critical path, including a price-integrity check | `tests/ui/test_checkout.py` |
 | API contract testing with JSON Schema | `api_client/schemas.py`, `tests/api/test_bookings.py` |
 | Negative and security checks (bad credentials, missing auth token) | `tests/api/test_auth.py` |
+| API authorization: no token, forged token and wrong Basic auth are all rejected, and data stays unchanged | `tests/security/test_api_security.py` |
+| Injection: SQL-injection-style credentials never earn a token; script in form fields never executes | `tests/security/` |
+| Session security: protected pages need login, and logout really ends the session | `tests/security/test_ui_security.py` |
+| OWASP ZAP baseline scan in CI, with findings summarized on every run | `.github/workflows/tests.yml` (`zap-baseline` job) |
 | Test isolation: every test creates and cleans up its own data | `conftest.py` (`booking` fixture), `test_data/factories.py` |
 | Screenshot on any UI failure; Playwright traces kept for failed tests | `conftest.py`, `.github/workflows/tests.yml` |
 | Environment-driven config: same suite, any environment | `config/settings.py` |
-| CI/CD: three parallel jobs (API, Selenium, Playwright), smoke vs. regression scope, HTML + JUnit reports | `.github/workflows/tests.yml` |
+| CI/CD: four parallel test jobs (API, Selenium, Playwright, Security) plus a ZAP scan, smoke vs. regression scope, HTML + JUnit reports | `.github/workflows/tests.yml` |
 
 ## Test coverage
 
@@ -49,7 +56,9 @@ It tests two public practice applications:
 | Playwright · Catalog | 2 | Price sort, store still works when product images fail (network interception) |
 | API · Auth | 4 | Health check, token issue, bad credentials, update without token (403) |
 | API · Bookings | 7 | Create, read, filter, full update, partial update, delete, unknown ID (404) |
-| **Total** | **32** | |
+| Security · API | 7 | Delete/update without token, forged token, wrong Basic auth, 3 SQL-injection-style logins |
+| Security · UI | 5 | 2 protected pages without login, logout ends session, XSS in login and checkout fields |
+| **Total** | **44** | Plus an OWASP ZAP baseline scan on every run |
 
 ## Project structure
 
@@ -65,9 +74,10 @@ It tests two public practice applications:
 ├── tests/
 │   ├── api/                      # REST API tests
 │   ├── playwright/               # Playwright browser tests
+│   ├── security/                 # API and browser security tests
 │   └── ui/                       # Selenium browser tests
 ├── conftest.py                   # Fixtures, setup/teardown, failure screenshots
-└── pytest.ini                    # Markers: ui, playwright, api, smoke, regression
+└── pytest.ini                    # Markers: ui, playwright, api, security, smoke, regression
 ```
 
 ## Run it locally
@@ -85,6 +95,7 @@ pytest                         # everything
 pytest -m smoke                # fast critical-path checks
 pytest -m api                  # API only
 pytest -m playwright           # Playwright only
+pytest -m security             # security tests only
 pytest -m "ui and regression"  # combine markers
 pytest -n auto                 # run in parallel
 HEADLESS=false pytest -m ui    # watch the Selenium browser
@@ -101,4 +112,6 @@ Selenium Manager downloads the matching ChromeDriver automatically.
 - **Why does each test make its own data?** Shared data creates order-dependent tests that pass alone and fail together. Isolated tests can run in parallel.
 - **Why schema validation?** A 200 status code with a missing or retyped field is still a broken contract. The schema catches it.
 - **Why both Selenium and Playwright?** Many teams run Selenium suites today and are moving to Playwright. Covering the same flows in both shows the trade-offs directly: Playwright's auto-waiting and network control remove a whole class of flaky waits, while Selenium's WebDriver standard still covers the widest range of browsers and grids.
+- **Why security tests in a QA suite?** Authorization bugs and injection flaws are functional defects with the highest cost. Checking them on every run, next to the functional tests, catches regressions the day they're introduced instead of at the next annual pen test.
+- **Why only a passive ZAP scan?** The baseline scan inspects normal responses (headers, cookies, information leaks) and sends no attack traffic, so it's safe to run against a public demo site. Active scanning belongs only on systems you own or have written permission to test.
 - **Why one rerun in CI?** These are shared public demo services that occasionally hiccup. One retry absorbs network noise. A test that fails twice is a real failure.

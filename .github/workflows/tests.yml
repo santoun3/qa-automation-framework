@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [api, ui, playwright]
+        suite: [api, ui, playwright, security]
 
     steps:
       - uses: actions/checkout@v5
@@ -35,7 +35,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Install Playwright browser
-        if: matrix.suite == 'playwright'
+        if: matrix.suite == 'playwright' || matrix.suite == 'security'
         run: python -m playwright install --with-deps chromium
 
       - name: Pick test scope
@@ -86,3 +86,46 @@ jobs:
               with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
                   out.write(f"### ${{ matrix.suite }} tests\n\n| Passed | Failed | Errors | Skipped |\n|---|---|---|---|\n| {passed} | {f} | {e} | {s} |\n")
           EOF
+
+  zap-baseline:
+    name: OWASP ZAP baseline scan
+    runs-on: ubuntu-latest
+    steps:
+      # Passive scan only: ZAP crawls the public demo site and inspects responses
+      # (headers, cookies, information leaks). It sends no attack traffic.
+      - name: Run ZAP baseline scan
+        run: |
+          mkdir -p zap && chmod 777 zap
+          docker run --rm -v "$PWD/zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t https://www.saucedemo.com \
+            -r zap-report.html -J zap-report.json -I
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: zap-baseline-report
+          path: zap/
+          retention-days: 14
+
+      - name: Publish summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          path = "zap/zap-report.json"
+          out = open(os.environ["GITHUB_STEP_SUMMARY"], "a")
+          out.write("### OWASP ZAP baseline scan\n\n")
+          if not os.path.exists(path):
+              out.write("No report was produced.\n")
+              raise SystemExit
+          alerts = [a for site in json.load(open(path)).get("site", []) for a in site.get("alerts", [])]
+          if not alerts:
+              out.write("No findings.\n")
+              raise SystemExit
+          order = {"3": 0, "2": 1, "1": 2, "0": 3}
+          out.write("| Risk | Finding | Instances |\n|---|---|---|\n")
+          for a in sorted(alerts, key=lambda a: order.get(a.get("riskcode"), 9)):
+              risk = a.get("riskdesc", "").split(" (")[0]
+              out.write(f"| {risk} | {a.get('name')} | {a.get('count', len(a.get('instances', [])))} |\n")
+          PY
