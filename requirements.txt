@@ -1,4 +1,5 @@
 selenium>=4.20,<5
+pytest-playwright>=0.5,<1
 pytest>=8.0,<9
 pytest-html>=4.1,<5
 pytest-xdist>=3.5,<4

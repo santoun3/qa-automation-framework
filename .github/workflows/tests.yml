@@ -21,18 +21,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [api, ui]
+        suite: [api, ui, playwright]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        if: matrix.suite == 'playwright'
+        run: python -m playwright install --with-deps chromium
 
       - name: Pick test scope
         id: scope
@@ -55,12 +59,14 @@ jobs:
           pytest -m "${{ steps.scope.outputs.marker }}" \
             -n auto \
             --reruns 1 --reruns-delay 2 \
+            --screenshot only-on-failure --tracing retain-on-failure \
+            --output reports/playwright-artifacts \
             --junitxml=reports/junit-${{ matrix.suite }}.xml \
             --html=reports/report-${{ matrix.suite }}.html --self-contained-html
 
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: test-report-${{ matrix.suite }}
           path: reports/
