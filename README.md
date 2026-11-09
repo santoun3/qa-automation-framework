@@ -1,6 +1,6 @@
 # QA Automation Framework — UI + API
 
-[![Tests](https://github.com/YOUR-GITHUB-USERNAME/qa-automation-framework/actions/workflows/tests.yml/badge.svg)](https://github.com/YOUR-GITHUB-USERNAME/qa-automation-framework/actions/workflows/tests.yml)
+[![Tests](https://github.com/santoun3/qa-automation-framework/actions/workflows/tests.yml/badge.svg)](https://github.com/santoun3/qa-automation-framework/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![Selenium](https://img.shields.io/badge/selenium-4-43B02A)
 ![pytest](https://img.shields.io/badge/pytest-8-0A9EDC)
@@ -66,7 +66,7 @@ It tests two public practice applications:
 Requires Python 3.10+ and Chrome.
 
 ```bash
-git clone https://github.com/YOUR-GITHUB-USERNAME/qa-automation-framework.git
+git clone https://github.com/santoun3/qa-automation-framework.git
 cd qa-automation-framework
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
