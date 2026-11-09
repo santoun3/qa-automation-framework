@@ -1,0 +1,82 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 11 * * *"   # nightly full regression, 5-6 AM Central
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Which tests to run"
+        type: choice
+        options: [smoke, regression, all]
+        default: all
+
+jobs:
+  test:
+    name: ${{ matrix.suite }} tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [api, ui]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pick test scope
+        id: scope
+        run: |
+          # Pushes and PRs run the fast smoke set; nightly and manual runs go wider.
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "marker=${{ matrix.suite }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.suite }}" != "all" ]; then
+            echo "marker=${{ matrix.suite }} and ${{ inputs.suite }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "marker=${{ matrix.suite }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "marker=${{ matrix.suite }} and smoke" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests
+        env:
+          HEADLESS: "true"
+        run: |
+          pytest -m "${{ steps.scope.outputs.marker }}" \
+            -n auto \
+            --reruns 1 --reruns-delay 2 \
+            --junitxml=reports/junit-${{ matrix.suite }}.xml \
+            --html=reports/report-${{ matrix.suite }}.html --self-contained-html
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.suite }}
+          path: reports/
+          retention-days: 14
+
+      - name: Publish summary
+        if: always()
+        run: |
+          python - <<'EOF'
+          import xml.etree.ElementTree as ET, os
+          path = "reports/junit-${{ matrix.suite }}.xml"
+          if os.path.exists(path):
+              root = ET.parse(path).getroot()
+              suite = root if root.tag == "testsuite" else root.find("testsuite")
+              t, f, e, s = (int(suite.get(k, 0)) for k in ("tests", "failures", "errors", "skipped"))
+              passed = t - f - e - s
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+                  out.write(f"### ${{ matrix.suite }} tests\n\n| Passed | Failed | Errors | Skipped |\n|---|---|---|---|\n| {passed} | {f} | {e} | {s} |\n")
+          EOF
